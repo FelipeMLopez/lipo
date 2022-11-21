@@ -3,6 +3,7 @@ The optimization module
 """
 import logging
 import math
+import time
 from typing import Callable, Dict, List, Tuple, Union
 
 import dlib
@@ -53,6 +54,7 @@ class GlobalOptimizer:
         function: Union[Callable, None] = None,
         lower_bounds: Dict[str, Union[float, int]] = {},
         upper_bounds: Dict[str, Union[float, int]] = {},
+        limit_bounds: Dict[str, List[float]] = {},
         categories: Dict[str, List[str]] = {},
         log_args: Union[str, List[str]] = "auto",
         flexible_bounds: Dict[str, List[bool]] = {},
@@ -102,12 +104,28 @@ class GlobalOptimizer:
             ), f"Lower bound should be smaller than upper bound for argument {name}"
 
         self.categories = categories
-        self.arg_names = list(upper_bounds.keys()) + list(self.categories.keys())
+        # self.arg_names = list(upper_bounds.keys()) + list(self.categories.keys())
+        self.arg_names = list(upper_bounds.keys())
+        for key in self.categories:
+            if key in self.arg_names:
+                continue
+            self.arg_names.append(key)
 
         # set bounds
+        # default limit [0.01, 0.99]
+        # self.limit_bounds = {name: limit_bounds.get(name, [0.01, 0.99]) for name in self.arg_names}
+        self.limit_bounds = dict()
+        for name in self.arg_names:
+            if name in self.categories:
+                continue
+            self.limit_bounds[name] = limit_bounds.get(name, [0.01, 0.99])
+
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
         for name, cats in self.categories.items():
+            # we dont need to check both
+            if name in lower_bounds:
+                continue
             self.lower_bounds[name] = 0
             self.upper_bounds[name] = len(cats) - 1
 
@@ -189,6 +207,8 @@ class GlobalOptimizer:
         """
         if self.flexible_bound_threshold >= 0:  # if to flexibilize bounds
 
+            start = time.time()
+
             if len(self.search.get_function_evaluations()[1][0]) > 1 / (
                 max(self.flexible_bound_threshold, 0.05)
             ):  # ensure sufficient evaluations have happened -> not more than 20
@@ -196,8 +216,6 @@ class GlobalOptimizer:
                 # check for optima close to bounds
                 optimum_args = self.optimum[0]
                 for name in self.arg_names:
-                    if name in self.categories:
-                        continue
 
                     lower = self.lower_bounds[name]
                     upper = self.upper_bounds[name]
@@ -208,39 +226,109 @@ class GlobalOptimizer:
                     else:
                         val = optimum_args[name]
 
-                    # redefine lower bound
-                    if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
-                        # center value
-                        proposed_val = val - (upper - val)
-                        # limit change in log space
-                        if name in self.log_args:
-                            proposed_val = max(self.upper_bounds[name] - 2, proposed_val, -15)
+                    if name in self.categories:
+                        # It's val a index or a value
+                        # print(f'get_candidate category: {name} = {val} <- {self.categories[name].index(val)}')
+                        # continue
 
-                        if proposed_val < self.lower_bounds[name]:
-                            self.lower_bounds[name] = proposed_val
-                            # restart search
-                            reinit = True
+                        min_limit = 0
+                        max_limit = len(self.categories[name]) - 1
 
-                    # redefine upper bound
-                    elif (upper - val) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][1]:
-                        # center value
-                        proposed_val = val + (val - lower)
-                        # limit log space redefinition
-                        if name in self.log_args:
-                            proposed_val = min(self.upper_bounds[name] + 2, proposed_val, 15)
+                        # optimum arg value so far
+                        val = self.categories[name].index(val)
 
-                        if proposed_val > self.upper_bounds[name]:
-                            self.upper_bounds[name] = proposed_val
-                            # restart search
-                            reinit = True
+                        growth = int(max_limit*self.flexible_bound_threshold)
 
-                    if self.is_integer[name]:
-                        self.lower_bounds[name] = int(self.lower_bounds[name])
-                        self.upper_bounds[name] = int(self.upper_bounds[name])
+                        # redefine lower bound
+                        if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
+                            # center value
+                            # proposed_val = val - (upper - val)
+                            # fixed increment
+                            proposed_val = lower - growth
+
+                            print(f'get_candidate lower: {name} = {val} ; growth = {growth} ; proposed_val = {proposed_val}')
+
+                            # continue
+
+                            if proposed_val < self.lower_bounds[name]:
+                                # Don't accept lower arguments than min_limit
+                                if proposed_val <= min_limit:
+                                    proposed_val = min_limit
+                                    # no longer flexible
+                                    self.flexible_bounds[name][0] = False
+                                self.lower_bounds[name] = proposed_val
+                                # restart search
+                                reinit = True
+
+                        # redefine upper bound
+                        elif (upper - val) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][1]:
+                            # center value
+                            # proposed_val = val + (val - lower)
+                            # fixed increment
+                            proposed_val = upper + growth
+
+                            print(f'get_candidate upper: {name} = {val} ; growth = {growth} ; proposed_val = {proposed_val}')
+
+                            # continue
+
+                            if proposed_val > self.upper_bounds[name]:
+                                # Don't accept arguments greater than 1.0
+                                if max_limit <= proposed_val:
+                                    proposed_val = max_limit
+                                    # no longer flexible
+                                    self.flexible_bounds[name][1] = False
+                                self.upper_bounds[name] = proposed_val
+                                # restart search
+                                reinit = True
+                    else:
+                        # redefine lower bound
+                        if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
+                            # center value
+                            proposed_val = val - (upper - val)
+                            # fixed increment
+                            # proposed_val = lower - 0.1
+                            # limit change in log space
+                            if name in self.log_args:
+                                proposed_val = max(self.upper_bounds[name] - 2, proposed_val, -15)
+
+                            if proposed_val < self.lower_bounds[name]:
+                                # Don't accept lower arguments than min_limit
+                                if proposed_val <= self.limit_bounds[name][0]:
+                                    proposed_val = self.limit_bounds[name][0]
+                                    # no longer flexible
+                                    self.flexible_bounds[name][0] = False
+                                self.lower_bounds[name] = proposed_val
+                                # restart search
+                                reinit = True
+
+                        # redefine upper bound
+                        elif (upper - val) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][1]:
+                            # center value
+                            proposed_val = val + (val - lower)
+                            # fixed increment
+                            # proposed_val = upper + 0.1
+                            # limit log space redefinition
+                            if name in self.log_args:
+                                proposed_val = min(self.upper_bounds[name] + 2, proposed_val, 15)
+
+                            if proposed_val > self.upper_bounds[name]:
+                                # Don't accept arguments greater than 1.0
+                                if self.limit_bounds[name][1] <= proposed_val:
+                                    proposed_val = self.limit_bounds[name][1]
+                                    # no longer flexible
+                                    self.flexible_bounds[name][1] = False
+                                self.upper_bounds[name] = proposed_val
+                                # restart search
+                                reinit = True
+
+                        if self.is_integer[name]:
+                            self.lower_bounds[name] = int(self.lower_bounds[name])
+                            self.upper_bounds[name] = int(self.upper_bounds[name])
 
                 if reinit:  # reinitialize optimization with new bounds
                     logger.debug(f"resetting bounds to {self.lower_bounds} to {self.upper_bounds}")
                     self._init_search()
+                    print('\t\tOPT REINIT TIME:', time.time()-start)
 
         return EvaluationCandidate(
             candidate=self.search.get_next_x(),
@@ -260,6 +348,9 @@ class GlobalOptimizer:
             ]
         else:
             evals = self.init_evaluations
+            # print(f'\n\nLength init_evaluations:{len(evals)}\n')
+            # list_evaluations = [([x[0][name] for name in self.arg_names], x[1]) for x in evals]
+            # print(f'\nlist_evaluations: {list_evaluations[:5]}\n')
         return evals
 
     @property
