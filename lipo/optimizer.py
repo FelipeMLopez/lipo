@@ -10,6 +10,7 @@ import dlib
 
 logger = logging.getLogger(__name__)
 
+print('Hello from my LIPO fork')
 
 class EvaluationCandidate:
     def __init__(self, candidate, arg_names, categories, log_args, maximize, is_integer):
@@ -237,7 +238,8 @@ class GlobalOptimizer:
                         # optimum arg value so far
                         val = self.categories[name].index(val)
 
-                        growth = int(max_limit*self.flexible_bound_threshold)
+                        # be sure growth is greter than 0
+                        growth = max(int(max_limit*self.flexible_bound_threshold), 1)
 
                         # redefine lower bound
                         if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
