@@ -157,9 +157,14 @@ class GlobalOptimizer:
         for name in self.log_args:
             assert not self.is_integer[name], f"Integer or categorical arguments such as {name} cannot be in log space"
 
+        self.saved_evaluations = evaluations
+
         # convert initial evaluations
         self.init_evaluations = []
-        for x, y in evaluations:
+        # x: arg dict
+        # y: template id
+        # z: Discrimination Ration
+        for x, y, z in evaluations:
             e = {}
             for name, val in x.items():
                 if name in self.categories:
@@ -168,7 +173,7 @@ class GlobalOptimizer:
                     e[name] = math.log(val)
                 else:
                     e[name] = val
-            self.init_evaluations.append((e, y))
+            self.init_evaluations.append((e, z))
 
         # if to maximize
         self.maximize = maximize
@@ -364,20 +369,25 @@ class GlobalOptimizer:
             List[Tuple[Dict[str], float]]]: list of x and y value pairs
         """
         # convert log space and categories
-        converted_evals = []
-        for x, y in self._raw_evaluations:
-            e = {}
-            for name, val in x.items():
-                if self.is_integer[name]:
-                    val = int(val)
-                if name in self.categories:
-                    e[name] = self.categories[name][val]
-                elif name in self.log_args:
-                    e[name] = math.exp(val)
-                else:
-                    e[name] = val
-            converted_evals.append((e, y))
-        return converted_evals
+        # converted_evals = []
+        # for x, y in self._raw_evaluations:
+        #     e = {}
+        #     for name, val in x.items():
+        #         if self.is_integer[name]:
+        #             val = int(val)
+        #         if name in self.categories:
+        #             e[name] = self.categories[name][val]
+        #         elif name in self.log_args:
+        #             e[name] = math.exp(val)
+        #         else:
+        #             e[name] = val
+        #     converted_evals.append((e, y))
+        # import numpy as np
+        
+        # print('\n\n\nEqual saved evaluations:', np.all(np.asarray(converted_evals) == np.asarray(self.saved_evaluations)))
+        # print(converted_evals[0], self.saved_evaluations[0])
+        # print(len(self.saved_evaluations), len(converted_evals))
+        return self.saved_evaluations
 
     @property
     def optimum(self):
@@ -410,7 +420,9 @@ class GlobalOptimizer:
         """
         for _ in range(num_function_calls):
             candidate = self.get_candidate()
-            candidate.set(self.function(**candidate.x))
+            idx,y = self.function(**candidate.x)
+            self.saved_evaluations.append((candidate.x, idx, y))
+            candidate.set(y)
 
     @property
     def running_optimum(self):
@@ -422,16 +434,17 @@ class GlobalOptimizer:
         """
         optima = []
         for e in self.evaluations:
+            # e = (dict, idx, val)
             if len(optima) == 0:
-                optima.append(e[1])
+                optima.append(e[2])
             else:
                 if self.maximize:
-                    if optima[-1] > e[1]:
+                    if optima[-1] > e[2]:
                         optima.append(optima[-1])
                     else:
-                        optima.append(e[1])
+                        optima.append(e[2])
                 else:
-                    if optima[-1] < e[1]:
+                    if optima[-1] < e[2]:
                         optima.append(optima[-1])
                     else:
                         optima.append(e[1])
