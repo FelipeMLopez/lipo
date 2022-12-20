@@ -133,7 +133,7 @@ class GlobalOptimizer:
         # infer if variable is integer
         self.is_integer = {name: isinstance(self.lower_bounds[name], int) for name in self.arg_names}
 
-        # set arguemnts in log space
+        # set arguments in log space
         if isinstance(log_args, str) and log_args == "auto":
             self.log_args = []
             for name in self.arg_names:
@@ -147,7 +147,7 @@ class GlobalOptimizer:
             self.log_args = log_args
         # transform bounds
         for name in self.log_args:
-            assert name not in self.categories, f"Log-space is not defined for categoricals such as {name}"
+            assert name not in self.categories, f"Log-space is not defined for categories such as {name}"
             assert not self.is_integer[name], f"Log-space is not defined for integer variables such as {name}"
             assert self.lower_bounds[name] > 0, f"Log-space for {name} is only defined for positive lower bounds"
             self.lower_bounds[name] = math.log(self.lower_bounds[name])
@@ -164,7 +164,8 @@ class GlobalOptimizer:
         # x: arg dict
         # y: template id
         # z: Discrimination Ration
-        for x, y, z in evaluations:
+        # th: Threshold
+        for x, _, z, _ in evaluations:
             e = {}
             for name, val in x.items():
                 if name in self.categories:
@@ -243,7 +244,7 @@ class GlobalOptimizer:
                         # optimum arg value so far
                         val = self.categories[name].index(val)
 
-                        # be sure growth is greter than 0
+                        # be sure growth is greater than 0
                         growth = max(int(max_limit*self.flexible_bound_threshold), 1)
 
                         # redefine lower bound
@@ -420,8 +421,11 @@ class GlobalOptimizer:
         """
         for _ in range(num_function_calls):
             candidate = self.get_candidate()
-            idx,y = self.function(**candidate.x)
-            self.saved_evaluations.append((candidate.x, idx, y))
+            # evaluate
+            idx,y,th = self.function(**candidate.x)
+            # save evaluation
+            self.saved_evaluations.append((candidate.x, idx, y, th))
+            # update search
             candidate.set(y)
 
     @property
@@ -434,7 +438,7 @@ class GlobalOptimizer:
         """
         optima = []
         for e in self.evaluations:
-            # e = (dict, idx, val)
+            # e = (dict, idx, val, th)
             if len(optima) == 0:
                 optima.append(e[2])
             else:
