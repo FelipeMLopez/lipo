@@ -162,7 +162,7 @@ class GlobalOptimizer:
         # convert initial evaluations
         self.init_evaluations = []
         # x: arg dict
-        # y: template id
+        # y: list of pattern ids
         # z: Discrimination Ration
         # th: Threshold
         for x, _, z, _ in evaluations:
@@ -422,9 +422,12 @@ class GlobalOptimizer:
         for _ in range(num_function_calls):
             candidate = self.get_candidate()
             # evaluate
-            idx,y,th = self.function(**candidate.x)
+            # idxs: list of pattern indices
+            # y: DR score
+            # th: threshold
+            idxs,y,th = self.function(**candidate.x)
             # save evaluation
-            self.saved_evaluations.append((candidate.x, idx, y, th))
+            self.saved_evaluations.append((candidate.x, idxs, y, th))
             # update search
             candidate.set(y)
 
@@ -438,7 +441,7 @@ class GlobalOptimizer:
         """
         optima = []
         for e in self.evaluations:
-            # e = (dict, idx, val, th)
+            # e = (dict, idxs, val, th)
             if len(optima) == 0:
                 optima.append(e[2])
             else:
