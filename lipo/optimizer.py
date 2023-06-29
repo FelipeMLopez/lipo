@@ -64,6 +64,8 @@ class GlobalOptimizer:
         maximize: bool = True,
         epsilon=0.0,
         random_state=None,
+        random_search_probability=0.02,
+        num_random_samples=5000,
     ):
         """
         Init optimizer
@@ -90,6 +92,8 @@ class GlobalOptimizer:
         """
         self.function = function
         self.epsilon = epsilon
+        self.random_search_probability = random_search_probability
+        self.num_random_samples = num_random_samples
         self.random_state = random_state
 
         # check bounds
@@ -201,8 +205,17 @@ class GlobalOptimizer:
             relative_noise_magnitude=0.001,
         )
         self.search.set_solver_epsilon(self.epsilon)
+        self.search.set_pure_random_search_probability(self.random_search_probability)
+        self.search.set_monte_carlo_upper_bound_sample_num(self.num_random_samples)
         if self.random_state is not None:
             self.search.set_seed(self.random_state)
+
+        # print all self.serach parameters
+        print("Search parameters:")
+        print(f"  epsilon: {self.epsilon}")
+        print(f"  random_search_probability: {self.random_search_probability}")
+        print(f"  num_random_samples: {self.num_random_samples}")
+        print(f"  random_state: {self.random_state}")
 
     def get_candidate(self):
         """
