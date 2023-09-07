@@ -1040,17 +1040,33 @@ class GlobalOptimizer:
         Args:
             num_function_calls (int): number of function calls
         """
+        candidates_t = np.zeros(num_function_calls)
+        evals_t = np.zeros(num_function_calls)
+        set_t = np.zeros(num_function_calls)
+
+        start_opt = time.time()
+
         for i in range(num_function_calls):
+            start_t = time.time()
             candidate = self.get_candidate()
+            candidates_t[i] = time.time() - start_t
             # evaluate
             # idxs: list of pattern indices
             # y: DR score
             # th: threshold
+            start_t = time.time()
             idxs,y,th = self.function(**candidate.x)
+            evals_t[i] = time.time() - start_t
             # save evaluation
             self.saved_evaluations.append((candidate.x, idxs, y, th))
             # update search
+            start_t = time.time()
             candidate.set(y)
+            set_t[i] = time.time() - start_t
+
+            if i%500 == 0: 
+                print(f'\t# of evaluations: {len(self.saved_evaluations)}')
+                print(f'\t\tCandidate {i} time: {candidates_t[i] :.2f} s; eval time: {evals_t[i] :.2f} s; set time: {set_t[i] :.2f} s; Total time: {time.time()-start_opt :.2f} s')
 
     @property
     def running_optimum(self):
