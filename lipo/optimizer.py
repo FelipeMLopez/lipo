@@ -5,7 +5,7 @@ The optimization module
 import math
 import time
 from typing import Callable, Dict, List, Tuple, Union
-from multiprocessing import Process, Queue, Manager, cpu_count, Lock, Pool
+from multiprocessing import Process, Queue, cpu_count
 from functools import partial
 import numpy as np
 
@@ -80,8 +80,6 @@ class GlobalOptimizer:
         random_state=None,
         random_search_probability=0.02,
         num_random_samples=5000,
-        manager=None,
-        shared_attribute=None,
     ):
         """
         Init optimizer
@@ -111,9 +109,6 @@ class GlobalOptimizer:
         self.random_search_probability = random_search_probability
         self.num_random_samples = num_random_samples
         self.random_state = random_state
-
-        self.manager = Manager()
-        self.shared_attribute = self.manager.list()
 
         # check bounds
         assert len(lower_bounds) == len(upper_bounds), "Number of upper and lower bounds should be the same"
@@ -374,156 +369,6 @@ class GlobalOptimizer:
                     # logger.debug(f"resetting bounds to {self.lower_bounds} to {self.upper_bounds}")
                     self._init_search()
                     print('\t\tOPT REINIT TIME:', time.time()-start)
-
-        return EvaluationCandidate(
-            candidate=self.search.get_next_x(),
-            arg_names=self.arg_names,
-            categories=self.categories,
-            maximize=self.maximize,
-            log_args=self.log_args,
-            is_integer=self.is_integer,
-        )
-
-    def get_candidate_par(self, lock):
-        """
-        get candidate for evaluation
-
-        Returns:
-            EvaluationCandidate: candidate has property `x` for candidate kwargs and method `set` to
-                inform the optimizer of the value
-        """
-
-        # adquire lock
-        lock.acquire()
-
-        if self.flexible_bound_threshold >= 0:  # if to flexibilize bounds
-
-            start = time.time()
-
-            if len(self.search.get_function_evaluations()[1][0]) > 1 / (
-                max(self.flexible_bound_threshold, 0.05)
-            ):  # ensure sufficient evaluations have happened -> not more than 20
-                reinit = False
-                # check for optima close to bounds
-                optimum_args = self.optimum[0]
-                for name in self.arg_names:
-
-                    lower = self.lower_bounds[name]
-                    upper = self.upper_bounds[name]
-                    span = upper - lower
-
-                    if name in self.log_args:
-                        val = math.log(optimum_args[name])
-                    else:
-                        val = optimum_args[name]
-
-                    if name in self.categories:
-                        # It's val a index or a value
-                        # print(f'get_candidate category: {name} = {val} <- {self.categories[name].index(val)}')
-                        # continue
-
-                        min_limit = 0
-                        max_limit = len(self.categories[name]) - 1
-
-                        # optimum arg value so far
-                        val = self.categories[name].index(val)
-
-                        # be sure growth is greater than 0
-                        growth = max(int(max_limit*self.flexible_bound_threshold), 1)
-
-                        # redefine lower bound
-                        if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
-                            # center value
-                            # proposed_val = val - (upper - val)
-                            # fixed increment
-                            proposed_val = lower - growth
-
-                            # print(f'get_candidate lower: {name} = {val} ; growth = {growth} ; proposed_val = {proposed_val}')
-
-                            # continue
-
-                            if proposed_val < self.lower_bounds[name]:
-                                # Don't accept lower arguments than min_limit
-                                if proposed_val <= min_limit:
-                                    proposed_val = min_limit
-                                    # no longer flexible
-                                    self.flexible_bounds[name][0] = False
-                                self.lower_bounds[name] = proposed_val
-                                # restart search
-                                reinit = True
-
-                        # redefine upper bound
-                        elif (upper - val) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][1]:
-                            # center value
-                            # proposed_val = val + (val - lower)
-                            # fixed increment
-                            proposed_val = upper + growth
-
-                            # print(f'get_candidate upper: {name} = {val} ; growth = {growth} ; proposed_val = {proposed_val}')
-
-                            # continue
-
-                            if proposed_val > self.upper_bounds[name]:
-                                # Don't accept arguments greater than 1.0
-                                if max_limit <= proposed_val:
-                                    proposed_val = max_limit
-                                    # no longer flexible
-                                    self.flexible_bounds[name][1] = False
-                                self.upper_bounds[name] = proposed_val
-                                # restart search
-                                reinit = True
-                    else:
-                        # redefine lower bound
-                        if (val - lower) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][0]:
-                            # center value
-                            proposed_val = val - (upper - val)
-                            # fixed increment
-                            # proposed_val = lower - 0.1
-                            # limit change in log space
-                            if name in self.log_args:
-                                proposed_val = max(self.upper_bounds[name] - 2, proposed_val, -15)
-
-                            if proposed_val < self.lower_bounds[name]:
-                                # Don't accept lower arguments than min_limit
-                                if proposed_val <= self.limit_bounds[name][0]:
-                                    proposed_val = self.limit_bounds[name][0]
-                                    # no longer flexible
-                                    self.flexible_bounds[name][0] = False
-                                self.lower_bounds[name] = proposed_val
-                                # restart search
-                                reinit = True
-
-                        # redefine upper bound
-                        elif (upper - val) / span <= self.flexible_bound_threshold and self.flexible_bounds[name][1]:
-                            # center value
-                            proposed_val = val + (val - lower)
-                            # fixed increment
-                            # proposed_val = upper + 0.1
-                            # limit log space redefinition
-                            if name in self.log_args:
-                                proposed_val = min(self.upper_bounds[name] + 2, proposed_val, 15)
-
-                            if proposed_val > self.upper_bounds[name]:
-                                # Don't accept arguments greater than 1.0
-                                if self.limit_bounds[name][1] <= proposed_val:
-                                    proposed_val = self.limit_bounds[name][1]
-                                    # no longer flexible
-                                    self.flexible_bounds[name][1] = False
-                                self.upper_bounds[name] = proposed_val
-                                # restart search
-                                reinit = True
-
-                        if self.is_integer[name]:
-                            self.lower_bounds[name] = int(self.lower_bounds[name])
-                            self.upper_bounds[name] = int(self.upper_bounds[name])
-
-                if reinit:  # reinitialize optimization with new bounds
-                    # logger.debug(f"resetting bounds to {self.lower_bounds} to {self.upper_bounds}")
-                    self._init_search()
-                    print('\t\tOPT REINIT TIME:', time.time()-start)
-
-        # release lock
-        lock.release()
 
         return EvaluationCandidate(
             candidate=self.search.get_next_x(),
@@ -921,117 +766,6 @@ class GlobalOptimizer:
                 pass
 
         return
-
-
-
-    def run_parallelX(self, num_function_calls: int = 1, nprocs=None):
-        """
-        run optimization in parallel
-
-        Args:
-            num_function_calls (int): number of function calls
-            nprocs (int): number of processes to use
-        """
-        if nprocs is None:
-            nprocs = cpu_count()
-        
-        assert nprocs > 0, "nprocs must be positive"
-
-        assert nprocs < num_function_calls, "Must have more evaluations than processes"
-
-        start_opt = time.time()
-
-        # we need to save the candidates because the Queue will not be able to pickle them
-        # candidates = np.full(num_function_calls, None, dtype=object)
-        
-        # pre-allocate num_iterations elements in the shared list
-        self.shared_attribute.extend([None] * num_function_calls)
-
-        # idea from https://github.com/tsoernes/gfsopt/blob/master/gfsopt/gfsopt.py#L321
-        result_queue = Queue()
-
-        # create a lock
-        lock = Lock()
-
-        def spawn_process(pid):
-            start_t = time.time()
-            candidate = self.get_candidate_par(lock)
-            if pid%100 == 99: # print every 100 candidates
-                print(f'Candidate {pid} time: {time.time()-start_t :.2f} s; Total time: {time.time()-start_opt :.2f} s; # of evaluations: {len(self.saved_evaluations)}')
-            # evaluate function
-            idxs,y,th = self.function(**candidate.x)
-            # update search
-            candidate.set(y)
-            # save evaluation
-            result_queue.put((pid, candidate.x, idxs, y, th))
-
-            return
-        
-        def spawn_get(pid, shared_attribute):
-            # print lower bounds
-            print(self.lower_bounds)
-            # print shared attribute length
-            print(len(shared_attribute))
-            candidate = self.get_candidate()
-            shared_attribute[pid] = candidate
-            result_queue.put(pid)
-            return
-
-        def store_result():
-            # get result
-            pid, x, idxs, y, th = result_queue.get(block=True, timeout=None)
-            # print(f'Candidate {pid} time: Total time: {time.time()-start_opt :.2f} s; # of evaluations: {len(self.saved_evaluations)}')
-            # save evaluation
-            self.saved_evaluations.append((x, idxs, y, th))
-            # print the last nprocs results executed
-            # if num_function_calls-nprocs <= len(self.saved_evaluations):
-            #     print(f'Candidate {pid} time: Total time: {time.time()-start_opt :.2f} s; # of evaluations: {len(self.saved_evaluations)}')
-
-        def eval_store():
-            # get result
-            pid = result_queue.get(block=True, timeout=None)
-            # evaluate function
-            idxs,y,th = self.function(**self.shared_attribute[pid].x)
-            # update search
-            self.shared_attribute[pid].set(y)
-            # save evaluation
-            self.saved_evaluations.append((self.shared_attribute[pid].x, idxs, y, th))
-            # print the last nprocs results executed
-            # if num_function_calls-nprocs <= len(self.saved_evaluations):
-            #     print(f'Candidate {pid} time: Total time: {time.time()-start_opt :.2f} s; # of evaluations: {len(self.saved_evaluations)}')
-
-        for i in range(num_function_calls):
-            p = Process(target=spawn_get, args=(i,self.shared_attribute))
-            p.start()
-            p.join()
-            eval_store()
-
-        # # initialize
-        # for i in range(nprocs):
-        #     # spawn process
-        #     Process(target=spawn_process, args=(i,)).start()
-
-        # # run
-        # for i in range(nprocs, num_function_calls):
-        #     # store result
-        #     store_result()
-        #     # spawn process
-        #     Process(target=spawn_process, args=(i,)).start()
-
-        # # finish
-        # for _ in range(nprocs):
-        #     # store result
-        #     store_result()
-
-        
-        # for i in range(num_function_calls):
-        #     p = Process(target=spawn_process, args=(i,))
-        #     p.start()
-        #     p.join()
-        #     store_result()
-        
-        return
-
 
     def run(self, num_function_calls: int = 1):
         """
