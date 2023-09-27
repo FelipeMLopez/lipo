@@ -802,6 +802,26 @@ class GlobalOptimizer:
                 print(f'\t# of evaluations: {len(self.saved_evaluations)}')
                 print(f'\t\tCandidate {i} time: {candidates_t[i] :.2f} s; eval time: {evals_t[i] :.2f} s; set time: {set_t[i] :.2f} s; Total time: {time.time()-start_opt :.2f} s')
 
+    def run_noverbose(self, num_function_calls: int = 1):
+        """
+        run optimization
+
+        Args:
+            num_function_calls (int): number of function calls
+        """
+
+        for i in range(num_function_calls):
+            candidate = self.get_candidate()
+            # evaluate
+            # idxs: list of pattern indices
+            # y: DR score
+            # th: threshold
+            idxs,y,th = self.function(**candidate.x)
+            # save evaluation
+            self.saved_evaluations.append((candidate.x, idxs, y, th))
+            # update search
+            candidate.set(y)
+
     @property
     def running_optimum(self):
         """
