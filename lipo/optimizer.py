@@ -246,8 +246,6 @@ class GlobalOptimizer:
         """
         if self.flexible_bound_threshold >= 0:  # if to flexibilize bounds
 
-            start = time.time()
-
             if len(self.search.get_function_evaluations()[1][0]) > 1 / (
                 max(self.flexible_bound_threshold, 0.05)
             ):  # ensure sufficient evaluations have happened -> not more than 20
@@ -367,8 +365,9 @@ class GlobalOptimizer:
 
                 if reinit:  # reinitialize optimization with new bounds
                     # logger.debug(f"resetting bounds to {self.lower_bounds} to {self.upper_bounds}")
+                    start_t = time.time()
                     self._init_search()
-                    print('\t\tOPT REINIT TIME:', time.time()-start)
+                    print(f'\t\tOPT REINIT TIME: {time.time()-start_t :.2f} s')
 
         return EvaluationCandidate(
             candidate=self.search.get_next_x(),
