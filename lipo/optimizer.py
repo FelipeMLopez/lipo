@@ -365,9 +365,9 @@ class GlobalOptimizer:
 
                 if reinit:  # reinitialize optimization with new bounds
                     # logger.debug(f"resetting bounds to {self.lower_bounds} to {self.upper_bounds}")
-                    start_t = time.time()
+                    # start_t = time.time()
                     self._init_search()
-                    print(f'\t\tOPT REINIT TIME: {time.time()-start_t :.2f} s')
+                    # print(f'\t\tOPT REINIT TIME: {time.time()-start_t :.2f} s')
 
         return EvaluationCandidate(
             candidate=self.search.get_next_x(),
